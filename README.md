@@ -124,6 +124,7 @@ came back:
 | `bad model id` | the provider doesn't recognise it — a one-line fix in `models.yaml`, and the most likely failure since vendors rename models constantly |
 | `unreachable` | bad key, wrong base URL, or network policy |
 | `no json` | it answered, but not with JSON. This model would take a panel seat and then cast no votes |
+| `blocked` | the request never left your machine — a proxy, firewall or allowlist refused the endpoint. Nothing in `models.yaml` will fix it |
 | `no key` | its `*_API_KEY` isn't set; it will be simulated |
 
 Exit code is non-zero if anything is broken, so it drops straight into CI.
@@ -323,7 +324,7 @@ record.
 
 ```bash
 pip install -e ".[dev]"
-pytest                        # 99 tests, no network, no keys required
+pytest                        # 101 tests, no network, no keys required
 ruff check orchestra tests    # same rules CI enforces
 ORCHESTRA_SIMULATE=1 orchestra-server
 ```
@@ -347,6 +348,7 @@ refusals and old-SDK fallback degradation.
 | `ORCHESTRA_MODELS` | bundled | path to an alternate `models.yaml` |
 | `OPENROUTER_API_KEY` | unset | fills every seat a native key doesn't |
 | `ORCHESTRA_PREFER_OPENROUTER` | unset | `1` routes via OpenRouter even when a native key exists |
+| `OPENROUTER_BASE_URL` | openrouter.ai | point the same route at a self-hosted gateway (LiteLLM, an internal proxy) |
 | `ORCHESTRA_TOKEN` | unset | shared token required on `/api/*`; set it whenever you bind past localhost |
 | `PORT` / `HOST` | `8000` / `127.0.0.1` | server bind — `HOST=0.0.0.0` to reach it from another device |
 

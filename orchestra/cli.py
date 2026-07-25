@@ -186,6 +186,7 @@ async def cmd_doctor(args: argparse.Namespace) -> int:
         "ok": f"{GREEN}ok{RESET}",
         "no_key": f"{DIM}no key{RESET}",
         "unreachable": f"{RED}unreachable{RESET}",
+        "blocked": f"{RED}blocked{RESET}",
         "stale_model_id": f"{RED}bad model id{RESET}",
         "no_json": f"{YELLOW}no json{RESET}",
     }
@@ -198,7 +199,14 @@ async def cmd_doctor(args: argparse.Namespace) -> int:
         f"\n{len(result.usable)} usable · {len(result.broken)} broken · "
         f"{len(result.unconfigured)} not configured"
     )
-    if result.broken:
+    blocked = [p for p in result.probes if p.status == "blocked"]
+    if blocked:
+        print(
+            f"{YELLOW}{len(blocked)} model(s) blocked before the request left this "
+            f"machine — a proxy, firewall or allowlist is refusing the endpoint, "
+            f"not the provider. Nothing in models.yaml will fix that.{RESET}"
+        )
+    if any(p.status == "stale_model_id" for p in result.probes):
         print(
             f"{YELLOW}A 'bad model id' is usually a one-line fix in "
             f"orchestra/models.yaml — vendors rename models often.{RESET}"

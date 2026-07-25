@@ -120,3 +120,55 @@ async def test_dispatch_actually_targets_openrouter(monkeypatch):
     assert result.ok
     assert seen["model_id"] == "x-ai/grok-4"
     assert seen["base_url"] == OPENROUTER_BASE_URL
+
+
+async def test_attribution_headers_go_to_real_openrouter_only(monkeypatch):
+    """OpenRouter asks for these; a self-hosted gateway has no use for them.
+
+    Gated on the hostname, so a mock or LiteLLM proxy on localhost doesn't
+    receive them — which also means only a targeted test can pin this.
+    """
+    import httpx
+
+    from orchestra.providers import OpenAICompatProvider
+    from orchestra.providers.base import ModelSpec
+
+    monkeypatch.setenv(OR, "sk-or-test")
+    provider = OpenAICompatProvider()
+    captured: dict = {}
+
+    async def fake_post(url, **kwargs):
+        captured.update(kwargs["headers"])
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": "{}"}}]},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(provider._get_client(), "post", fake_post)
+
+    spec = ModelSpec(
+        key="x", name="X", vendor="V", provider="openai_compat",
+        model_id="openai/gpt-5", base_url=OPENROUTER_BASE_URL, api_key_env=OR,
+    )
+    await provider.complete(spec, "s", "u")
+    assert captured["HTTP-Referer"]
+    assert captured["X-Title"] == "Council"
+
+    captured.clear()
+    await provider.complete(replace_url(spec, "http://127.0.0.1:9/v1"), "s", "u")
+    assert "X-Title" not in captured
+    await provider.aclose()
+
+
+def replace_url(spec, url):
+    from dataclasses import replace
+
+    return replace(spec, base_url=url)
+
+
+def test_base_url_is_overridable_for_self_hosted_gateways(monkeypatch):
+    """Same route, pointed at LiteLLM or an internal proxy."""
+    monkeypatch.setenv(OR, "sk-or-test")
+    monkeypatch.setenv("OPENROUTER_BASE_URL", "http://gateway.internal/v1")
+    registry = Registry()
+    assert registry._as_openrouter(registry.get("gpt-5")).base_url == "http://gateway.internal/v1"

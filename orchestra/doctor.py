@@ -31,6 +31,20 @@ PROBE_SYSTEM = (
 )
 PROBE_USER = 'Return exactly this JSON object: {"ok": true}'
 
+# A local egress proxy refusing CONNECT looks nothing like a provider saying
+# no, but both surface as a failed request. Separating them matters: one is a
+# firewall/allowlist problem on your side, the other is a key or model problem.
+_BLOCKED_HINTS = (
+    "proxyerror",
+    "connect tunnel failed",
+    "tunnel connection failed",
+    "connection refused",
+    "temporary failure in name resolution",
+    "nodename nor servname",
+    "name or service not known",
+    "certificate verify failed",
+)
+
 # Substrings providers use when they don't recognise a model ID. Worth
 # separating from generic failures because it points at a one-line YAML fix.
 _STALE_ID_HINTS = (
@@ -51,7 +65,7 @@ class Probe:
     name: str
     vendor: str
     model_id: str
-    status: str  # ok | no_key | unreachable | stale_model_id | no_json
+    status: str  # ok | no_key | blocked | unreachable | stale_model_id | no_json
     detail: str = ""
     latency_s: float = 0.0
     tokens: int = 0
@@ -121,12 +135,18 @@ async def preflight(registry: Registry, keys: list[str] | None = None) -> Prefli
         if not result.ok:
             error = (result.error or "unknown error").strip()
             lowered = error.lower()
-            base.status = (
-                "stale_model_id"
-                if any(hint in lowered for hint in _STALE_ID_HINTS)
-                else "unreachable"
-            )
-            base.detail = error[:300]
+            if any(hint in lowered for hint in _BLOCKED_HINTS):
+                base.status = "blocked"
+                base.detail = (
+                    f"network egress to this endpoint is blocked locally, so the "
+                    f"request never reached the provider — {error[:180]}"
+                )
+            elif any(hint in lowered for hint in _STALE_ID_HINTS):
+                base.status = "stale_model_id"
+                base.detail = error[:300]
+            else:
+                base.status = "unreachable"
+                base.detail = error[:300]
             return base
 
         if extract_json(result.text) is None:

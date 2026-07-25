@@ -26,7 +26,12 @@ TIMEOUT_GRACE_S = 20.0
 
 # OpenRouter fronts every vendor behind one OpenAI-compatible endpoint, so a
 # single key can fill a whole cross-vendor panel.
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+# Overridable so the same route works against a self-hosted gateway that
+# speaks the OpenRouter/OpenAI schema (LiteLLM, an internal proxy, a test
+# double) without touching models.yaml.
+OPENROUTER_BASE_URL = os.environ.get(
+    "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+)
 OPENROUTER_KEY_ENV = "OPENROUTER_API_KEY"
 
 
@@ -135,7 +140,7 @@ class Registry:
             spec,
             provider="openai_compat",
             model_id=spec.openrouter_id or spec.model_id,
-            base_url=OPENROUTER_BASE_URL,
+            base_url=os.environ.get("OPENROUTER_BASE_URL", OPENROUTER_BASE_URL),
             api_key_env=OPENROUTER_KEY_ENV,
             # OpenRouter normalises everything to the OpenAI schema, so JSON
             # mode is available even for models whose native API lacks it.
