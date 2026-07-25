@@ -16,7 +16,6 @@ from .registry import Registry
 from .schemas import (
     Ballot,
     Claim,
-    ClaimStatus,
     Framing,
     Phase,
     Proposal,

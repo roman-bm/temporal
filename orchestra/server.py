@@ -6,10 +6,9 @@ import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
+from hmac import compare_digest
 from pathlib import Path
 from typing import Any
-
-from hmac import compare_digest
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
@@ -157,7 +156,7 @@ async def stream_events(session_id: str) -> StreamingResponse:
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=20.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Keep proxies from dropping an idle connection while a
                     # slow model is still thinking.
                     yield ": keep-alive\n\n"

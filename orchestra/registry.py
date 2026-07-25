@@ -165,7 +165,7 @@ class Registry:
                     ),
                     timeout=deadline,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return LLMResult(
                     text="",
                     model_key=key,

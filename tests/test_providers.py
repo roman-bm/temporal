@@ -6,9 +6,8 @@ exception that takes down the whole council.
 """
 
 import httpx
-import pytest
 
-from orchestra.providers import LLMResult, ModelSpec, OpenAICompatProvider, SimulatedProvider
+from orchestra.providers import ModelSpec, OpenAICompatProvider, SimulatedProvider
 from orchestra.providers.anthropic_provider import AnthropicProvider
 
 

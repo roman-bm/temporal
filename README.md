@@ -1,5 +1,7 @@
 # Council
 
+[![CI](https://github.com/roman-bm/temporal/actions/workflows/ci.yml/badge.svg?branch=claude%2Fmulti-model-orchestration-app-ss2bvu)](https://github.com/roman-bm/temporal/actions/workflows/ci.yml)
+
 **One model you choose chairs a panel of frontier models from rival providers.
 They propose, cross-examine, and negotiate over a shared claim ledger. The chair
 synthesises the result into analysis plus an executable plan — and reports what
@@ -291,8 +293,14 @@ record.
 ```bash
 pip install -e ".[dev]"
 pytest                        # 79 tests, no network, no keys required
+ruff check orchestra tests    # same rules CI enforces
 ORCHESTRA_SIMULATE=1 orchestra-server
 ```
+
+CI runs the suite on Python 3.11/3.12/3.13, lints, smoke-tests the CLI end to
+end against the simulator, and asserts `orchestra doctor` exits non-zero when
+no keys are configured. The test job runs with provider keys explicitly blanked
+so a green build can never depend on a credential leaking into the runner.
 
 The suite covers the consensus math (weighting, abstention, thresholds,
 weight conservation under the curve-graded reliability update), JSON recovery
