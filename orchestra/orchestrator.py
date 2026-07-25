@@ -30,6 +30,12 @@ Emit = Callable[[dict[str, Any]], Awaitable[None]]
 MAX_CLAIMS_PER_MODEL = 5
 DEDUPE_THRESHOLD = 0.82
 
+REPAIR_SUFFIX = (
+    "\n\n---\nYour previous reply could not be parsed as JSON. Return ONLY the "
+    "JSON object described above: no prose before or after it, no markdown "
+    "fences, no explanation. Begin your reply with { and end it with }."
+)
+
 
 @dataclass
 class CouncilConfig:
@@ -61,6 +67,10 @@ class CouncilConfig:
         ballot per round). Negotiation can stop early on convergence, so this is
         a ceiling — worth showing before someone points fifteen models at a
         five-round run and finds out afterwards.
+
+        Excludes JSON repair retries, which are at most one per call and only
+        happen when a reply was already unusable. `stats.repair_retries`
+        reports how many actually fired.
         """
         panel = set(self.panel)
         if not self.include_orchestrator_in_panel:
@@ -73,6 +83,7 @@ class RunStats:
     calls: int = 0
     failures: int = 0
     simulated: int = 0
+    repairs: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
     wall_s: float = 0.0
@@ -493,6 +504,24 @@ class Council:
             key, system, user, json_object=json_object, phase=phase, context=context
         )
         self.stats.record(result)
+
+        # A model that answered in prose contributes no claims and casts no
+        # votes — its whole seat is wasted. One blunt retry recovers most of
+        # them, and costs a call only when the first reply was already unusable.
+        if json_object and result.ok and extract_json(result.text) is None:
+            await emit({"type": "model_repair", "model": key, "phase": phase})
+            retry = await self.registry.call(
+                key,
+                system,
+                user + REPAIR_SUFFIX,
+                json_object=json_object,
+                phase=phase,
+                context=context,
+            )
+            self.stats.record(retry)
+            self.stats.repairs += 1
+            if retry.ok and extract_json(retry.text) is not None:
+                result = retry
         await emit({
             "type": "model_done",
             "model": key,
@@ -545,6 +574,7 @@ class Council:
                 "calls": self.stats.calls,
                 "failures": self.stats.failures,
                 "simulated_calls": self.stats.simulated,
+                "repair_retries": self.stats.repairs,
                 "input_tokens": self.stats.input_tokens,
                 "output_tokens": self.stats.output_tokens,
                 "wall_s": self.stats.wall_s,

@@ -11,6 +11,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from .doctor import preflight
 from .orchestrator import Council, CouncilConfig
 from .registry import Registry
 from .report import to_markdown
@@ -33,6 +34,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     ls = sub.add_parser("models", help="list the registry and which models are live")
     ls.add_argument("--json", action="store_true")
+
+    doc = sub.add_parser(
+        "doctor",
+        help="probe every configured model with one tiny call and report what's broken",
+    )
+    doc.add_argument("-p", "--panel", default="",
+                     help="comma-separated keys to probe (default: all)")
+    doc.add_argument("--json", action="store_true")
 
     run = sub.add_parser("run", help="run a council")
     run.add_argument("task", nargs="?", help="the task (omit to read stdin)")
@@ -156,11 +165,53 @@ def _make_printer(quiet: bool):
     return emit
 
 
+async def cmd_doctor(args: argparse.Namespace) -> int:
+    registry = Registry()
+    keys = [k.strip() for k in args.panel.split(",") if k.strip()] or None
+    try:
+        result = await preflight(registry, keys)
+    finally:
+        await registry.aclose()
+
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2))
+        return 0 if not result.broken else 1
+
+    marks = {
+        "ok": f"{GREEN}ok{RESET}",
+        "no_key": f"{DIM}no key{RESET}",
+        "unreachable": f"{RED}unreachable{RESET}",
+        "stale_model_id": f"{RED}bad model id{RESET}",
+        "no_json": f"{YELLOW}no json{RESET}",
+    }
+    for probe in result.probes:
+        mark = marks.get(probe.status, probe.status)
+        timing = f"{probe.latency_s}s" if probe.latency_s else ""
+        print(f"  {mark:<22} {probe.key:<20} {timing:<8} {DIM}{probe.detail[:88]}{RESET}")
+
+    print(
+        f"\n{len(result.usable)} usable · {len(result.broken)} broken · "
+        f"{len(result.unconfigured)} not configured"
+    )
+    if result.broken:
+        print(
+            f"{YELLOW}A 'bad model id' is usually a one-line fix in "
+            f"orchestra/models.yaml — vendors rename models often.{RESET}"
+        )
+    if not result.can_run_a_council():
+        print(f"{RED}Not enough working models for a live council "
+              f"(need a chair plus at least one panelist).{RESET}")
+        return 1
+    return 1 if result.broken else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     args = build_parser().parse_args(argv)
     if args.command == "models":
         return cmd_models(args)
+    if args.command == "doctor":
+        return asyncio.run(cmd_doctor(args))
     return asyncio.run(cmd_run(args))
 
 

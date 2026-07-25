@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -133,8 +134,13 @@ class Registry:
         json_object: bool = True,
         phase: str = "",
         context: dict[str, Any] | None = None,
+        overrides: dict[str, Any] | None = None,
     ) -> LLMResult:
         spec = self.get(key)
+        if overrides:
+            # Used by the preflight check to probe a provider with a tiny
+            # max_tokens instead of a full protocol-sized request.
+            spec = replace(spec, **overrides)
         live = self.is_live(key)
         provider = self._providers[spec.provider if live else "simulated"]
 

@@ -113,6 +113,11 @@ def to_markdown(report: dict[str, Any]) -> str:
         f"{cfg.get('max_calls', stats.get('calls', 0))} "
         f"({stats.get('failures', 0)} failed, {stats.get('simulated_calls', 0)} simulated)"
     )
+    if stats.get("repair_retries"):
+        lines.append(
+            f"- JSON repair retries: {stats['repair_retries']} "
+            f"(a model replied in prose and was asked once more for the object)"
+        )
     lines.append(
         f"- Tokens: {stats.get('input_tokens', 0):,} in / "
         f"{stats.get('output_tokens', 0):,} out"

@@ -198,8 +198,65 @@ def test_max_calls_ignores_a_duplicated_chair_in_the_panel():
 
 
 async def test_actual_calls_never_exceed_the_estimate(registry, config):
+    """The ceiling covers protocol calls; repair retries are extra by design."""
     report = await Council(registry, config).run("Pick a database.")
-    assert report["stats"]["calls"] <= report["config"]["max_calls"]
+    stats = report["stats"]
+    assert stats["calls"] - stats["repair_retries"] <= report["config"]["max_calls"]
+
+
+async def test_a_prose_reply_gets_one_repair_attempt(registry, config, monkeypatch):
+    """A model answering in prose otherwise casts no votes at all."""
+    from orchestra.orchestrator import REPAIR_SUFFIX
+    from orchestra.providers import LLMResult
+
+    original = registry.call
+    attempts = {"n": 0}
+
+    async def flaky(key, system, user, **kwargs):
+        if key == "gpt-5" and kwargs.get("phase") == "proposal":
+            attempts["n"] += 1
+            if REPAIR_SUFFIX in user:
+                return LLMResult(
+                    text='{"position": "recovered", "claims": []}', model_key=key
+                )
+            return LLMResult(text="Let me think about this in prose.", model_key=key)
+        return await original(key, system, user, **kwargs)
+
+    monkeypatch.setattr(registry, "call", flaky)
+
+    report = await Council(registry, config).run("Pick a database.")
+    proposal = next(p for p in report["proposals"] if p["model_key"] == "gpt-5")
+    assert attempts["n"] == 2, "should retry exactly once"
+    assert proposal["position"] == "recovered"
+    assert proposal["error"] is None
+    assert report["stats"]["repair_retries"] >= 1
+
+
+async def test_repair_gives_up_after_one_attempt(registry, config, monkeypatch):
+    """Two prose replies must not loop — keep the first and move on."""
+    from orchestra.providers import LLMResult
+
+    original = registry.call
+    attempts = {"n": 0}
+
+    async def stubborn(key, system, user, **kwargs):
+        if key == "gpt-5" and kwargs.get("phase") == "proposal":
+            attempts["n"] += 1
+            return LLMResult(text="Still prose, sorry.", model_key=key)
+        return await original(key, system, user, **kwargs)
+
+    monkeypatch.setattr(registry, "call", stubborn)
+
+    report = await Council(registry, config).run("Pick a database.")
+    assert attempts["n"] == 2
+    proposal = next(p for p in report["proposals"] if p["model_key"] == "gpt-5")
+    assert "not JSON" in proposal["error"]
+    assert "Still prose" in proposal["position"]
+
+
+async def test_no_repair_when_the_first_reply_parses(registry, config):
+    report = await Council(registry, config).run("Pick a database.")
+    assert report["stats"]["repair_retries"] == 0
 
 
 async def test_start_event_advertises_the_ceiling(registry, config):

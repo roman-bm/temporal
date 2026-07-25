@@ -92,6 +92,7 @@ JSON — there is no silent substitution, and simulated output is **not analysis
 
 ```bash
 orchestra models                        # who's live, who's simulated
+orchestra doctor                        # probe every configured model, one tiny call each
 
 orchestra run "Should we migrate the billing monolith to event sourcing? \
   40 engineers, flat budget, weekly releases." \
@@ -109,6 +110,21 @@ orchestra run "Should we migrate the billing monolith to event sourcing? \
 | `-t, --target` | stop early at this convergence level (default 0.78) |
 | `--simulate` | force the simulator for every model |
 | `-o` / `--json-out` | write the markdown / full JSON report |
+
+**Run `orchestra doctor` before your first live council.** A run costs dozens of
+calls; discovering there that a model ID went stale is an expensive way to find
+out. It sends one ~64-token request per configured model and classifies what
+came back:
+
+| Result | Meaning |
+|---|---|
+| `ok` | reachable, ID valid, and it returned parseable JSON |
+| `bad model id` | the provider doesn't recognise it — a one-line fix in `models.yaml`, and the most likely failure since vendors rename models constantly |
+| `unreachable` | bad key, wrong base URL, or network policy |
+| `no json` | it answered, but not with JSON. This model would take a panel seat and then cast no votes |
+| `no key` | its `*_API_KEY` isn't set; it will be simulated |
+
+Exit code is non-zero if anything is broken, so it drops straight into CI.
 
 ### Running it from your phone
 
@@ -244,8 +260,10 @@ you want one confident answer regardless of the evidence, this is the wrong tool
 licensed to overrule the ledger with a stated reason. Pure aggregation produces
 worse answers than a strong synthesiser with full visibility.
 
-**Failure degrades, it doesn't abort.** A dead provider, a malformed JSON reply
-or a safety refusal removes one voice; the council continues and the report names
+**Failure degrades, it doesn't abort.** A model that replies in prose gets one
+blunt retry asking for the object alone — otherwise its seat is wasted, since it
+contributes no claims and casts no votes. Beyond that, a dead provider, a
+still-malformed reply or a safety refusal removes one voice; the council continues and the report names
 which model dropped out and why. A model that answers in prose keeps its position
 but contributes no claims — inventing claim boundaries on its behalf would
 misattribute them. Phases run models concurrently, so every call also carries a
@@ -272,14 +290,14 @@ record.
 
 ```bash
 pip install -e ".[dev]"
-pytest                        # 68 tests, no network, no keys required
+pytest                        # 79 tests, no network, no keys required
 ORCHESTRA_SIMULATE=1 orchestra-server
 ```
 
 The suite covers the consensus math (weighting, abstention, thresholds,
 weight conservation under the curve-graded reliability update), JSON recovery
 from realistically messy model output, the full protocol end-to-end against the
-simulator, call budgeting, the API token gate, and provider failure paths — missing keys, connection
+simulator, call budgeting, JSON repair retries, preflight classification, the API token gate, and provider failure paths — missing keys, connection
 errors, `json_object` rejection, hung providers hitting the deadline, Anthropic
 refusals and old-SDK fallback degradation.
 
@@ -300,6 +318,7 @@ orchestra/
   providers/        anthropic (SDK) · openai_compat (12 vendors) · simulated
   protocol.py       every phase prompt; the protocol *is* the prompts
   consensus.py      the ledger: claims, weighted votes, convergence
+  doctor.py         preflight: is each configured model actually usable?
   orchestrator.py   the five-phase engine
   server.py         FastAPI + SSE
   cli.py            terminal front-end
