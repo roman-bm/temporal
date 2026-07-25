@@ -127,3 +127,47 @@ def test_snapshot_is_json_serialisable():
     c = ledger.add_claim(claim(), author="a", round_no=0)
     ledger.record_vote("b", vote(c.id, "dispute"))
     json.dumps(ledger.snapshot())
+
+
+def test_uniform_accuracy_does_not_inflate_weights():
+    """When everyone is equally right, nobody's influence should move.
+
+    Grading against a fixed bar made every weight climb whenever the panel
+    broadly agreed, which drifts the whole panel to the ceiling and destroys
+    the mechanism's ability to discriminate.
+    """
+    ledger = Ledger(weights={"a": 1.0, "b": 1.2, "c": 1.5})
+    for i in range(3):
+        c = ledger.add_claim(claim(f"claim {i}"), author="a", round_no=0)
+        ledger.record_vote("b", vote(c.id, "endorse"))
+        ledger.record_vote("c", vote(c.id, "endorse"))
+
+    before = dict(ledger.weights)
+    ledger.update_weights()
+    assert ledger.weights == before
+
+
+def test_weights_are_conserved_not_inflated():
+    """Total voting mass stays flat as influence redistributes.
+
+    Needs five voters: a claim cannot reach the 3:1 accept threshold with
+    three, so a smaller panel decides nothing and there is no evidence to
+    re-weight on.
+    """
+    ledger = Ledger(weights={m: 1.0 for m in ("sharp", "f1", "f2", "f3", "blunt")})
+    for i in range(4):
+        c = ledger.add_claim(claim(f"claim {i}"), author="sharp", round_no=0)
+        for follower in ("f1", "f2", "f3"):
+            ledger.record_vote(follower, vote(c.id, "endorse"))
+        ledger.record_vote("blunt", vote(c.id, "dispute"))
+
+    assert ledger.count(ClaimStatus.ACCEPTED) == 4, "scenario must actually decide claims"
+
+    before_total = sum(ledger.weights.values())
+    ledger.update_weights()
+    after_total = sum(ledger.weights.values())
+
+    assert ledger.weights["sharp"] > 1.0
+    assert ledger.weights["blunt"] < 1.0
+    assert ledger.weights["sharp"] > ledger.weights["blunt"]
+    assert abs(after_total - before_total) < 0.01 * before_total

@@ -179,3 +179,35 @@ async def test_registry_reports_simulation_when_forced(registry):
     assert all(m["live"] is False for m in registry.status())
     assert len(registry.all()) >= 15
     assert len(registry.orchestrators()) >= 2
+
+
+# ── call budgeting ───────────────────────────────────────────────────
+
+def test_max_calls_matches_the_protocol():
+    cfg = CouncilConfig(orchestrator="claude-opus-5", panel=["gpt-5", "grok-4"], rounds=2)
+    # chair: framing + 2 notes + synthesis = 4; each panelist: proposal +
+    # cross-exam + 2 ballots = 4. Three participants -> 12.
+    assert cfg.max_calls() == 12
+
+
+def test_max_calls_ignores_a_duplicated_chair_in_the_panel():
+    cfg = CouncilConfig(
+        orchestrator="claude-opus-5", panel=["claude-opus-5", "gpt-5"], rounds=1
+    )
+    assert cfg.max_calls() == 6  # chair counted once, not twice
+
+
+async def test_actual_calls_never_exceed_the_estimate(registry, config):
+    report = await Council(registry, config).run("Pick a database.")
+    assert report["stats"]["calls"] <= report["config"]["max_calls"]
+
+
+async def test_start_event_advertises_the_ceiling(registry, config):
+    seen = []
+
+    async def emit(event):
+        seen.append(event)
+
+    await Council(registry, config).run("Pick a database.", emit=emit)
+    assert seen[0]["type"] == "start"
+    assert seen[0]["config"]["max_calls"] == config.max_calls()

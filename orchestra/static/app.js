@@ -105,11 +105,31 @@ function syncSelection() {
     c.style.pointerEvents = isChair ? "none" : "auto";
   });
   $("#panel-count").textContent = `${state.panel.size} panelists selected`;
+  renderEstimate();
+}
+
+// Mirrors CouncilConfig.max_calls(): the chair spends 2 + rounds, and so does
+// each panelist. Shown before the run so a 15-model, 5-round council isn't a
+// surprise on someone's billing page.
+function renderEstimate() {
+  const rounds = Number($("#rounds").value);
+  const calls = (2 + rounds) * (1 + state.panel.size);
+  const live = [...state.panel].filter(
+    (k) => (state.models.find((m) => m.key === k) || {}).live
+  ).length;
+  const chairLive = (state.models.find((m) => m.key === state.chair) || {}).live;
+  const billable = (2 + rounds) * (live + (chairLive ? 1 : 0));
+  $("#estimate").textContent =
+    `Up to ${calls} model calls (${billable} against live APIs, the rest simulated). ` +
+    `Negotiation stops early once convergence is reached, so this is a ceiling.`;
 }
 
 // ── controls ────────────────────────────────────────────────────────
 
-$("#rounds").addEventListener("input", (e) => ($("#rounds-out").value = e.target.value));
+$("#rounds").addEventListener("input", (e) => {
+  $("#rounds-out").value = e.target.value;
+  renderEstimate();
+});
 $("#target").addEventListener("input", (e) => {
   $("#target-out").value = (e.target.value / 100).toFixed(2);
 });

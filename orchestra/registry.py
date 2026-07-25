@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,9 @@ from .providers import (
 )
 
 DEFAULT_CONFIG = Path(__file__).with_name("models.yaml")
+
+# Headroom over a provider's own timeout before we stop waiting on it entirely.
+TIMEOUT_GRACE_S = 20.0
 
 
 class Registry:
@@ -134,15 +138,41 @@ class Registry:
         live = self.is_live(key)
         provider = self._providers[spec.provider if live else "simulated"]
 
+        # Phases run models with asyncio.gather, so one straggler holds up the
+        # whole round. Each provider sets its own timeout, but SDKs have their
+        # own defaults (the Anthropic client allows 10 minutes) and a wedged
+        # connection can ignore both. This is the backstop: past the grace
+        # window the call becomes a normal error result and the panel moves on.
+        started = time.perf_counter()
+        deadline = spec.timeout_s + TIMEOUT_GRACE_S
+
         async with self._sem:
-            result = await provider.complete(
-                spec,
-                system,
-                user,
-                json_object=json_object,
-                phase=phase,
-                context=context,
-            )
+            try:
+                result = await asyncio.wait_for(
+                    provider.complete(
+                        spec,
+                        system,
+                        user,
+                        json_object=json_object,
+                        phase=phase,
+                        context=context,
+                    ),
+                    timeout=deadline,
+                )
+            except asyncio.TimeoutError:
+                return LLMResult(
+                    text="",
+                    model_key=key,
+                    latency_s=round(time.perf_counter() - started, 2),
+                    error=f"timed out after {deadline:.0f}s",
+                )
+            except Exception as exc:  # noqa: BLE001 - a provider bug is one voice, not the run
+                return LLMResult(
+                    text="",
+                    model_key=key,
+                    latency_s=round(time.perf_counter() - started, 2),
+                    error=f"{type(exc).__name__}: {exc}",
+                )
 
         # A live model that errored is not silently swapped for the simulator —
         # the caller decides whether a degraded panelist is acceptable.

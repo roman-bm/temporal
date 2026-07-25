@@ -254,3 +254,41 @@ async def test_simulator_chair_note_is_prose_not_json():
     )
     assert not result.text.strip().startswith("{")
     assert "C001" in result.text
+
+
+# ── timeouts ─────────────────────────────────────────────────────────
+
+async def test_a_hanging_provider_becomes_an_error_not_a_stall(monkeypatch):
+    """One wedged model must not hold a whole phase hostage."""
+    import asyncio
+
+    from orchestra import registry as registry_module
+    from orchestra.registry import Registry
+
+    monkeypatch.setattr(registry_module, "TIMEOUT_GRACE_S", 0.0)
+    reg = Registry(force_simulation=True)
+    reg.get("gpt-5").timeout_s = 0.05
+
+    async def never_returns(*args, **kwargs):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(reg._providers["simulated"], "complete", never_returns)
+
+    result = await asyncio.wait_for(reg.call("gpt-5", "s", "u"), timeout=5)
+    assert result.ok is False
+    assert "timed out" in result.error
+
+
+async def test_a_provider_that_raises_is_contained(monkeypatch):
+    from orchestra.registry import Registry
+
+    reg = Registry(force_simulation=True)
+
+    async def explode(*args, **kwargs):
+        raise RuntimeError("provider bug")
+
+    monkeypatch.setattr(reg._providers["simulated"], "complete", explode)
+
+    result = await reg.call("gpt-5", "s", "u")
+    assert result.ok is False
+    assert "provider bug" in result.error

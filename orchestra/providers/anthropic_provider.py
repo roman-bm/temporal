@@ -60,6 +60,10 @@ class AnthropicProvider:
         context: dict | None = None,
     ) -> LLMResult:
         client = self._get_client(spec)
+        # The SDK defaults to a 10-minute request timeout, which is far longer
+        # than a council phase should ever wait on one panelist.
+        if hasattr(client, "with_options"):
+            client = client.with_options(timeout=spec.timeout_s)
         started = time.perf_counter()
 
         kwargs: dict = {

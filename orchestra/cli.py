@@ -99,6 +99,14 @@ async def cmd_run(args: argparse.Namespace) -> int:
         print(f"{RED}{exc}{RESET}", file=sys.stderr)
         return 2
 
+    live = [k for k in [config.orchestrator, *council.panel_keys] if registry.is_live(k)]
+    print(
+        f"{DIM}chair {config.orchestrator} · {len(council.panel_keys)} panelists · "
+        f"{args.rounds} rounds · up to {config.max_calls()} calls "
+        f"({len(live)}/{len(council.panel_keys) + 1} models live){RESET}",
+        file=sys.stderr,
+    )
+
     printer = _make_printer(quiet=args.quiet)
     try:
         report = await council.run(task, args.context, emit=printer)

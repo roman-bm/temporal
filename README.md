@@ -51,7 +51,7 @@ council arrived at* rather than a pile of parallel monologues.
 | **Claims, not essays.** Every substantive statement becomes an ID'd, falsifiable claim. Models vote on claims, not vibes. | Disagreement hiding inside prose nobody reconciles. |
 | **Abstention ≠ agreement.** Abstaining lowers a claim's *participation* rather than its support, and a claim below 50% participation can never read as settled. | A claim nobody engaged with being reported as consensus. |
 | **Amendments are mandatory on dispute.** A model that disputes must supply the rewrite that would move it to endorse. | Deadlock with no path out. |
-| **Reliability weighting.** Models that consistently land where the council settles gain voting weight; persistent outliers lose it. Capped at ±10% per round. | One confident model dominating — and, in the other direction, majority tyranny. |
+| **Reliability weighting, graded on a curve.** Models that land where the council settles gain voting weight; persistent outliers lose it. Scored against the panel's *own mean* accuracy, not a fixed bar, so total voting mass stays constant and uniform agreement moves nobody. Capped at ±10% per round. | One confident model dominating — and, in the other direction, weight inflation quietly pushing the whole panel to the ceiling until the mechanism stops discriminating. |
 | **The dissent register is a first-class output.** Contested claims ship with who held out and why. | False confidence, the most dangerous failure mode of ensemble methods. |
 
 ### The consensus math
@@ -186,7 +186,9 @@ Both the UI and `report.md` give you:
 - **What would change this conclusion** — the falsification list.
 - **Full claim ledger** — every claim with its support, participation, and the
   vote-by-vote record including stance changes between rounds.
-- **Run stats** — calls, failures, simulated calls, tokens, wall clock.
+- **Run stats** — calls made against the ceiling, failures, simulated calls,
+  per-model token usage and latency, and the final reliability weights showing
+  how far each model's influence drifted.
 
 The JSON export additionally carries every proposal, the chair's steering notes,
 per-round convergence, and the final reliability weights.
@@ -207,11 +209,19 @@ worse answers than a strong synthesiser with full visibility.
 or a safety refusal removes one voice; the council continues and the report names
 which model dropped out and why. A model that answers in prose keeps its position
 but contributes no claims — inventing claim boundaries on its behalf would
-misattribute them.
+misattribute them. Phases run models concurrently, so every call also carries a
+hard deadline: past its timeout plus a grace window a straggler becomes an error
+result and the round proceeds without it, rather than one wedged connection
+holding the whole panel.
 
-**Cost scales as `chair·(2 + rounds) + panel·(2 + rounds)`.** Twelve panelists at
-three rounds is ~65 calls. Start with 4–6 panelists and 2 rounds; add models for
-genuinely contested decisions, not for everything.
+**Cost is shown before you spend it.** A run costs at most
+`(2 + rounds) × (1 + panelists)` calls — the chair spends framing, one steering
+note per round, and synthesis; each panelist spends a proposal, a cross-exam
+ballot, and one ballot per round. The UI and CLI both print that ceiling up
+front, split by live vs simulated, because fifteen models at five rounds is 105
+calls and that shouldn't be a surprise on a billing page. Start with 4–6
+panelists and 2 rounds; add models for genuinely contested decisions, not for
+everything.
 
 **Sessions are memory-only.** Runs aren't persisted — the task box routinely
 receives things people wouldn't want on disk. Export the markdown if you want a
@@ -223,15 +233,16 @@ record.
 
 ```bash
 pip install -e ".[dev]"
-pytest                        # 52 tests, no network, no keys required
+pytest                        # 60 tests, no network, no keys required
 ORCHESTRA_SIMULATE=1 orchestra-server
 ```
 
 The suite covers the consensus math (weighting, abstention, thresholds,
-reliability updates), JSON recovery from realistically messy model output, the
-full protocol end-to-end against the simulator, and provider failure paths —
-missing keys, connection errors, `json_object` rejection, Anthropic refusals and
-old-SDK fallback degradation.
+weight conservation under the curve-graded reliability update), JSON recovery
+from realistically messy model output, the full protocol end-to-end against the
+simulator, call budgeting, and provider failure paths — missing keys, connection
+errors, `json_object` rejection, hung providers hitting the deadline, Anthropic
+refusals and old-SDK fallback degradation.
 
 | Env var | Default | Purpose |
 |---|---|---|

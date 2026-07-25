@@ -53,6 +53,20 @@ class CouncilConfig:
         if self.rounds < 0 or self.rounds > 6:
             raise ValueError("rounds must be between 0 and 6")
 
+    def max_calls(self) -> int:
+        """Upper bound on paid API calls for this configuration.
+
+        The chair spends 2 + rounds (framing, one steering note per round,
+        synthesis); each panelist spends 2 + rounds (proposal, cross-exam, one
+        ballot per round). Negotiation can stop early on convergence, so this is
+        a ceiling — worth showing before someone points fifteen models at a
+        five-round run and finds out afterwards.
+        """
+        panel = set(self.panel)
+        if not self.include_orchestrator_in_panel:
+            panel.discard(self.orchestrator)
+        return (2 + self.rounds) * (1 + len(panel))
+
 
 @dataclass
 class RunStats:
@@ -114,6 +128,7 @@ class Council:
             "panel": self.panel_keys,
             "rounds": self.config.rounds,
             "convergence_target": self.config.convergence_target,
+            "max_calls": self.config.max_calls(),
             "live_models": [k for k in [self.config.orchestrator, *self.panel_keys]
                             if self.registry.is_live(k)],
         }})
@@ -519,6 +534,7 @@ class Council:
                 "panel": self.panel_keys,
                 "rounds": self.config.rounds,
                 "convergence_target": self.config.convergence_target,
+                "max_calls": self.config.max_calls(),
             },
             "framing": self.framing.model_dump() if self.framing else None,
             "proposals": [p.model_dump() for p in self.proposals],

@@ -181,7 +181,8 @@ class Ledger:
         if not decided:
             return dict(self.weights)
 
-        for model_key in list(self.weights):
+        accuracy: dict[str, float] = {}
+        for model_key in self.weights:
             hits = 0.0
             seen = 0.0
             for claim in decided:
@@ -194,10 +195,22 @@ class Ledger:
                     or (claim.status is ClaimStatus.REJECTED and vote.stance is Stance.DISPUTE)
                 )
                 hits += 1.0 if aligned else 0.0
-            if seen == 0:
-                continue
-            accuracy = hits / seen            # 0..1
-            adjustment = 1.0 + rate * (2 * accuracy - 1.0)   # 0.9x .. 1.1x at rate=0.1
+            if seen:
+                accuracy[model_key] = hits / seen
+
+        if not accuracy:
+            return dict(self.weights)
+
+        # Grade on a curve, not against a fixed bar. Scoring each model against
+        # an absolute 0.5 meant that whenever the panel broadly agreed, *every*
+        # weight rose — they all drift to the ceiling and the mechanism stops
+        # discriminating. Measuring against the panel's own mean keeps total
+        # voting mass roughly constant, and when everyone is equally accurate
+        # nobody moves, which is right: uniform agreement is no evidence about
+        # who to trust more.
+        mean = sum(accuracy.values()) / len(accuracy)
+        for model_key, value in accuracy.items():
+            adjustment = 1.0 + rate * 2 * (value - mean)
             self.weights[model_key] = round(
                 max(floor, min(ceil, self.weights[model_key] * adjustment)), 4
             )
