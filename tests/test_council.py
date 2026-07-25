@@ -268,3 +268,93 @@ async def test_start_event_advertises_the_ceiling(registry, config):
     await Council(registry, config).run("Pick a database.", emit=emit)
     assert seen[0]["type"] == "start"
     assert seen[0]["config"]["max_calls"] == config.max_calls()
+
+
+# ── truncation handling ──────────────────────────────────────────────
+
+def test_synthesis_gets_a_bigger_budget_than_a_ballot(registry, config):
+    """Synthesis emits the largest payload and shares the budget with thinking."""
+    council = Council(registry, config)
+    assert council._budget_for("claude-opus-5", "synthesis") > \
+           council._budget_for("claude-opus-5", "negotiation")
+
+
+def test_budgets_are_capped(registry, config):
+    council = Council(registry, config)
+    from orchestra.orchestrator import MAX_TOKEN_CEILING
+
+    registry.get("claude-opus-5").max_tokens = 100_000
+    assert council._budget_for("claude-opus-5", "synthesis") == MAX_TOKEN_CEILING
+
+
+async def test_a_truncated_reply_is_retried_with_more_room(registry, config, monkeypatch):
+    """Re-sending a truncated reply at the same budget fails identically.
+
+    This is the exact failure that lost the action plan on the first live run:
+    synthesis hit max_tokens, the repair re-sent at the same size, and the
+    council fell back to prose with an empty plan.
+    """
+    from orchestra.providers import LLMResult
+
+    original = registry.call
+    budgets: list[int] = []
+
+    async def truncating(key, system, user, **kwargs):
+        if kwargs.get("phase") == "synthesis":
+            budget = (kwargs.get("overrides") or {}).get("max_tokens", 0)
+            budgets.append(budget)
+            if len(budgets) == 1:
+                return LLMResult(
+                    text='{"headline": "cut off mid-str',
+                    model_key=key, truncated=True,
+                )
+            return LLMResult(text='{"headline": "recovered", "confidence": 0.8}', model_key=key)
+        return await original(key, system, user, **kwargs)
+
+    monkeypatch.setattr(registry, "call", truncating)
+
+    report = await Council(registry, config).run("Pick a database.")
+    assert len(budgets) == 2, "should retry once"
+    assert budgets[1] > budgets[0], "the retry must get more room, not the same"
+    assert report["synthesis"]["headline"] == "recovered"
+
+
+async def test_a_truncated_reply_is_not_nagged_about_formatting(registry, config, monkeypatch):
+    """Truncation is a budget problem — telling it to 'return only JSON' is noise."""
+    from orchestra.orchestrator import REPAIR_SUFFIX
+    from orchestra.providers import LLMResult
+
+    original = registry.call
+    prompts: list[str] = []
+
+    async def truncating(key, system, user, **kwargs):
+        if kwargs.get("phase") == "synthesis":
+            prompts.append(user)
+            if len(prompts) == 1:
+                return LLMResult(text='{"headline": "cut', model_key=key, truncated=True)
+            return LLMResult(text='{"headline": "ok"}', model_key=key)
+        return await original(key, system, user, **kwargs)
+
+    monkeypatch.setattr(registry, "call", truncating)
+    await Council(registry, config).run("Pick a database.")
+    assert REPAIR_SUFFIX not in prompts[1]
+
+
+async def test_a_prose_reply_still_gets_the_formatting_nudge(registry, config, monkeypatch):
+    from orchestra.orchestrator import REPAIR_SUFFIX
+    from orchestra.providers import LLMResult
+
+    original = registry.call
+    prompts: list[str] = []
+
+    async def prose(key, system, user, **kwargs):
+        if kwargs.get("phase") == "synthesis":
+            prompts.append(user)
+            if len(prompts) == 1:
+                return LLMResult(text="Here are my thoughts.", model_key=key)
+            return LLMResult(text='{"headline": "ok"}', model_key=key)
+        return await original(key, system, user, **kwargs)
+
+    monkeypatch.setattr(registry, "call", prose)
+    await Council(registry, config).run("Pick a database.")
+    assert REPAIR_SUFFIX in prompts[1]

@@ -121,6 +121,7 @@ class OpenAICompatProvider:
 
 def _parse_ok(data: dict, spec: ModelSpec, latency: float) -> LLMResult:
     choices = data.get("choices") or []
+    truncated = bool(choices) and choices[0].get("finish_reason") == "length"
     text = ""
     if choices:
         message = choices[0].get("message") or {}
@@ -144,4 +145,5 @@ def _parse_ok(data: dict, spec: ModelSpec, latency: float) -> LLMResult:
         output_tokens=int(usage.get("completion_tokens") or 0),
         latency_s=latency,
         error=None if text.strip() else "empty completion",
+        truncated=truncated,
     )

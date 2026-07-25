@@ -38,6 +38,7 @@ class LLMResult:
     simulated: bool = False
     error: str | None = None
     refused: bool = False
+    truncated: bool = False   # hit max_tokens: output is cut mid-structure
 
     @property
     def ok(self) -> bool:

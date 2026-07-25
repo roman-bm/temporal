@@ -144,6 +144,7 @@ class AnthropicProvider:
             output_tokens=getattr(usage, "output_tokens", 0) or 0,
             latency_s=time.perf_counter() - started,
             error=error,
+            truncated=getattr(response, "stop_reason", None) == "max_tokens",
         )
 
     async def aclose(self) -> None:

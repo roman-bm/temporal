@@ -35,6 +35,15 @@ REPAIR_SUFFIX = (
     "fences, no explanation. Begin your reply with { and end it with }."
 )
 
+# Synthesis emits the largest structured payload of any phase — headline,
+# analysis, findings, an action plan, a dissent register — and on a thinking
+# model the same budget also has to cover the reasoning. At the default 4000
+# it truncates mid-JSON, which reads downstream as "the model replied in prose"
+# and silently costs you the entire action plan. Found on the first live run.
+PHASE_TOKEN_SCALE = {"synthesis": 4, "framing": 2}
+TRUNCATION_ESCALATION = 2
+MAX_TOKEN_CEILING = 32000
+
 
 @dataclass
 class CouncilConfig:
@@ -498,24 +507,41 @@ class Council:
         json_object: bool = True,
         emit: Emit,
     ) -> LLMResult:
+        budget = self._budget_for(key, phase)
         await emit({"type": "model_start", "model": key, "phase": phase})
         result = await self.registry.call(
-            key, system, user, json_object=json_object, phase=phase, context=context
+            key, system, user, json_object=json_object, phase=phase, context=context,
+            overrides={"max_tokens": budget},
         )
         self.stats.record(result)
 
-        # A model that answered in prose contributes no claims and casts no
-        # votes — its whole seat is wasted. One blunt retry recovers most of
-        # them, and costs a call only when the first reply was already unusable.
+        # A model whose reply won't parse contributes no claims and casts no
+        # votes — its whole seat is wasted. One retry recovers most of them, and
+        # costs a call only when the first reply was already unusable.
+        #
+        # The two causes need opposite treatment. Prose needs a firmer
+        # instruction; a truncated reply needs *room*, and re-sending it at the
+        # same budget is a guaranteed second failure at full price. The first
+        # live run did exactly that and lost the action plan twice over.
         if json_object and result.ok and extract_json(result.text) is None:
-            await emit({"type": "model_repair", "model": key, "phase": phase})
+            reason = "truncated" if result.truncated else "not-json"
+            await emit({
+                "type": "model_repair", "model": key, "phase": phase, "reason": reason,
+            })
+            retry_user = user if result.truncated else user + REPAIR_SUFFIX
+            retry_budget = (
+                min(budget * TRUNCATION_ESCALATION, MAX_TOKEN_CEILING)
+                if result.truncated
+                else budget
+            )
             retry = await self.registry.call(
                 key,
                 system,
-                user + REPAIR_SUFFIX,
+                retry_user,
                 json_object=json_object,
                 phase=phase,
                 context=context,
+                overrides={"max_tokens": retry_budget},
             )
             self.stats.record(retry)
             self.stats.repairs += 1
@@ -533,6 +559,11 @@ class Council:
             "error": result.error,
         })
         return result
+
+    def _budget_for(self, key: str, phase: str) -> int:
+        """Output-token budget for one call, scaled by how much the phase emits."""
+        base = self.registry.get(key).max_tokens
+        return min(base * PHASE_TOKEN_SCALE.get(phase, 1), MAX_TOKEN_CEILING)
 
     def _duplicate_of(self, text: str) -> bool:
         """Cheap near-duplicate check so twelve models don't fill the ledger
