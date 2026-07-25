@@ -9,6 +9,23 @@ const el = (tag, cls, text) => {
 };
 const esc = (s) => String(s ?? "");
 
+// When the server runs with ORCHESTRA_TOKEN, the phone gets it by opening
+// http://host:8000/?t=<token>. Stash it so it survives navigation, and strip it
+// from the visible URL so it doesn't end up in a screenshot or shared link.
+const token = (() => {
+  const fromUrl = new URLSearchParams(location.search).get("t");
+  if (fromUrl) {
+    sessionStorage.setItem("orchestra_token", fromUrl);
+    history.replaceState({}, "", location.pathname);
+  }
+  return sessionStorage.getItem("orchestra_token") || "";
+})();
+
+const authHeaders = () => (token ? { "X-Orchestra-Token": token } : {});
+// EventSource cannot send headers, so the stream carries the token as a query
+// param — the same value the middleware already accepts.
+const withToken = (url) => (token ? `${url}?t=${encodeURIComponent(token)}` : url);
+
 const state = {
   models: [],
   chair: null,
@@ -19,10 +36,23 @@ const state = {
   activity: new Map(),
 };
 
+function showAuthError() {
+  const badge = $("#live-badge");
+  badge.textContent = "token required";
+  badge.className = "badge warn";
+  const err = $("#setup-error");
+  err.textContent =
+    "This server requires an access token. Open the URL the server printed at " +
+    "startup, including the ?t=... part.";
+  err.hidden = false;
+  $("#run").disabled = true;
+}
+
 // ── boot ────────────────────────────────────────────────────────────
 
 async function boot() {
-  const res = await fetch("/api/models");
+  const res = await fetch("/api/models", { headers: authHeaders() });
+  if (res.status === 401) return showAuthError();
   const data = await res.json();
   state.models = data.models;
 
@@ -179,7 +209,7 @@ async function start() {
 
   const res = await fetch("/api/sessions", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -204,7 +234,7 @@ async function start() {
 }
 
 function listen(sessionId) {
-  const source = new EventSource(`/api/sessions/${sessionId}/events`);
+  const source = new EventSource(withToken(`/api/sessions/${sessionId}/events`));
   state.source = source;
   source.onmessage = (msg) => {
     const event = JSON.parse(msg.data);
@@ -494,7 +524,7 @@ function renderReport(report) {
   const actions = el("div", "report-actions");
   const md = el("button", "ghost", "Download markdown");
   md.addEventListener("click", () => {
-    window.open(`/api/sessions/${state.sessionId}/report.md`, "_blank");
+    window.open(withToken(`/api/sessions/${state.sessionId}/report.md`), "_blank");
   });
   const json = el("button", "ghost", "Download JSON");
   json.addEventListener("click", () => {

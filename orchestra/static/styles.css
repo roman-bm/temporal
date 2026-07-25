@@ -187,6 +187,13 @@ button.ghost { font-size: 12.5px; padding: 5px 10px; color: var(--muted); }
 
 /* ── ledger ─────────────────────────────────────────────────── */
 .ledger { display: flex; flex-direction: column; gap: 8px; max-height: 620px; overflow-y: auto; }
+/* On touch, a nested scroll region inside the page scroll traps the gesture —
+   let the ledger flow with the document instead. */
+@media (max-width: 900px) {
+  .ledger { max-height: none; overflow-y: visible; }
+  main { padding: 14px; }
+  .panel { padding: 16px; }
+}
 .claim {
   border: 1px solid var(--border); border-radius: 8px;
   background: var(--surface-2); padding: 10px 12px;

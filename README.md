@@ -110,6 +110,45 @@ orchestra run "Should we migrate the billing monolith to event sourcing? \
 | `--simulate` | force the simulator for every model |
 | `-o` / `--json-out` | write the markdown / full JSON report |
 
+### Running it from your phone
+
+The UI is responsive and the whole flow — including the live SSE stream — works
+at phone width. There's no app to install; you point the phone's browser at a
+machine running the server.
+
+**⚠ Read this first.** Binding past localhost so a phone can reach the UI also
+exposes it to everyone else on that network, and `POST /api/sessions` spends
+real money against whatever provider keys are loaded. Always set a token when
+you expose it:
+
+```bash
+export ORCHESTRA_TOKEN=$(openssl rand -hex 16)
+HOST=0.0.0.0 orchestra-server
+```
+
+The server prints the exact URL to open, token included. The API rejects any
+request without it; the page itself loads but can't do anything, and says so.
+The browser stashes the token in `sessionStorage` and strips it from the visible
+URL so it doesn't leak into a screenshot or a shared link. Start without
+`ORCHESTRA_TOKEN` on a non-loopback host and the server prints a loud warning
+instead.
+
+| Where the server runs | How the phone reaches it | Good for |
+|---|---|---|
+| **Your laptop, same Wi-Fi** | `http://<laptop-ip>:8000/?t=<token>` — find the IP with `ipconfig getifaddr en0` (macOS) or `hostname -I` (Linux) | The common case. Nothing leaves your network. |
+| **A tunnel** (`cloudflared tunnel --url http://localhost:8000`, `ngrok http 8000`) | The public HTTPS URL the tunnel prints, plus `?t=<token>` | Reaching it off your home network. The token is doing real work here — treat the URL as a credential. |
+| **A small VPS / Fly / Railway** | Its hostname, plus `?t=<token>` | Always-on. Put the provider keys in the host's secret store, not a committed `.env`. |
+
+Two things to know before you rely on it: iOS Safari suspends background tabs,
+so a long run can stall if you switch apps mid-council — the SSE stream replays
+its full backlog on reconnect, so pulling to refresh recovers the run rather
+than losing it. And sessions live in memory, so a server restart drops them;
+download the markdown while the report is on screen.
+
+Running Python *on* the phone (Termux on Android, a-Shell on iOS) technically
+works but isn't worth it — the panel is network-bound anyway, so the phone may
+as well just be the screen.
+
 ### Library
 
 ```python
@@ -233,14 +272,14 @@ record.
 
 ```bash
 pip install -e ".[dev]"
-pytest                        # 60 tests, no network, no keys required
+pytest                        # 68 tests, no network, no keys required
 ORCHESTRA_SIMULATE=1 orchestra-server
 ```
 
 The suite covers the consensus math (weighting, abstention, thresholds,
 weight conservation under the curve-graded reliability update), JSON recovery
 from realistically messy model output, the full protocol end-to-end against the
-simulator, call budgeting, and provider failure paths — missing keys, connection
+simulator, call budgeting, the API token gate, and provider failure paths — missing keys, connection
 errors, `json_object` rejection, hung providers hitting the deadline, Anthropic
 refusals and old-SDK fallback degradation.
 
@@ -249,7 +288,8 @@ refusals and old-SDK fallback degradation.
 | `ORCHESTRA_SIMULATE` | unset | `1` forces the simulator for every model |
 | `ORCHESTRA_CONCURRENCY` | `8` | max parallel model calls |
 | `ORCHESTRA_MODELS` | bundled | path to an alternate `models.yaml` |
-| `PORT` / `HOST` | `8000` / `127.0.0.1` | server bind |
+| `ORCHESTRA_TOKEN` | unset | shared token required on `/api/*`; set it whenever you bind past localhost |
+| `PORT` / `HOST` | `8000` / `127.0.0.1` | server bind — `HOST=0.0.0.0` to reach it from another device |
 
 ### Layout
 

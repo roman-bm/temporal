@@ -9,9 +9,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+from hmac import compare_digest
+
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    PlainTextResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -40,6 +47,27 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Multi-Model Orchestration Council", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def require_token(request: Request, call_next):
+    """Gate the API behind a shared token when one is configured.
+
+    Binding to 0.0.0.0 so a phone can reach the UI also exposes it to everyone
+    else on the network — and `POST /api/sessions` spends real money against
+    whatever provider keys are loaded. Set ORCHESTRA_TOKEN and the API refuses
+    anything without it. The static shell stays open because it can do nothing
+    on its own.
+
+    The token is accepted as a `?t=` query parameter as well as a header, since
+    typing a URL is the only practical way to hand a phone a credential.
+    """
+    token = os.environ.get("ORCHESTRA_TOKEN")
+    if token and request.url.path.startswith("/api/"):
+        supplied = request.headers.get("x-orchestra-token") or request.query_params.get("t")
+        if not compare_digest(supplied or "", token):
+            return JSONResponse({"detail": "invalid or missing token"}, status_code=401)
+    return await call_next(request)
 
 
 class RunRequest(BaseModel):
@@ -179,10 +207,33 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 def main() -> None:  # pragma: no cover - entry point
     import uvicorn
 
+    load_dotenv()
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "8000"))
+    token = os.environ.get("ORCHESTRA_TOKEN")
+
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        if token:
+            print(
+                f"\n  Reachable on the network at http://<this-machine>:{port}/?t={token}\n"
+                f"  Open that exact URL on your phone — the API rejects requests "
+                f"without the token.\n",
+                flush=True,
+            )
+        else:
+            print(
+                f"\n  ⚠  Bound to {host} with NO ORCHESTRA_TOKEN set.\n"
+                f"     Anyone who can reach port {port} can start runs that spend "
+                f"your provider API credits.\n"
+                f"     Set ORCHESTRA_TOKEN=$(openssl rand -hex 16) before exposing "
+                f"this beyond localhost.\n",
+                flush=True,
+            )
+
     uvicorn.run(
         "orchestra.server:app",
-        host=os.environ.get("HOST", "127.0.0.1"),
-        port=int(os.environ.get("PORT", "8000")),
+        host=host,
+        port=port,
         reload=os.environ.get("ORCHESTRA_RELOAD") == "1",
     )
 
