@@ -24,13 +24,20 @@ DEFAULT_CONFIG = Path(__file__).with_name("models.yaml")
 # Headroom over a provider's own timeout before we stop waiting on it entirely.
 TIMEOUT_GRACE_S = 20.0
 
+# OpenRouter fronts every vendor behind one OpenAI-compatible endpoint, so a
+# single key can fill a whole cross-vendor panel.
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_KEY_ENV = "OPENROUTER_API_KEY"
+
 
 class Registry:
     """Owns every model spec and the shared provider clients.
 
-    A model is *live* when its `api_key_env` is present in the environment.
-    Everything else falls back to the simulator, which is labelled as such all
-    the way through to the UI — there is no silent substitution.
+    A model is *live* when it can actually be reached: either its own
+    `api_key_env` is set (direct), or it has an `openrouter_id` and
+    OPENROUTER_API_KEY is set. Everything else falls back to the simulator,
+    which is labelled as such all the way through to the UI — there is no
+    silent substitution.
     """
 
     def __init__(
@@ -42,6 +49,7 @@ class Registry:
     ) -> None:
         self.path = Path(config_path or DEFAULT_CONFIG)
         self.force_simulation = force_simulation
+        self.prefer_openrouter = os.environ.get("ORCHESTRA_PREFER_OPENROUTER") == "1"
         self._specs: dict[str, ModelSpec] = {}
         self._order: list[str] = []
         self._sem = asyncio.Semaphore(max_concurrency)
@@ -68,6 +76,7 @@ class Registry:
                 model_id=entry["model_id"],
                 api_key_env=entry.get("api_key_env"),
                 base_url=entry.get("base_url"),
+                openrouter_id=entry.get("openrouter_id"),
                 weight=float(entry.get("weight", 1.0)),
                 can_orchestrate=bool(entry.get("can_orchestrate", False)),
                 supports_json_mode=bool(entry.get("supports_json_mode", False)),
@@ -97,13 +106,41 @@ class Registry:
     def orchestrators(self) -> list[ModelSpec]:
         return [s for s in self.all() if s.can_orchestrate]
 
-    def is_live(self, key: str) -> bool:
+    def route(self, key: str) -> str:
+        """How this model will actually be reached: direct, openrouter, or simulated.
+
+        A native key wins by default — it is the vendor's own endpoint, usually
+        cheaper and without an extra hop. OpenRouter fills every remaining seat
+        from a single key, which is what makes a genuinely cross-vendor panel
+        practical. ORCHESTRA_PREFER_OPENROUTER=1 inverts the preference.
+        """
         if self.force_simulation:
-            return False
+            return "simulated"
         spec = self.get(key)
         if spec.provider == "simulated":
-            return False
-        return bool(spec.api_key_env and os.environ.get(spec.api_key_env))
+            return "simulated"
+
+        native = bool(spec.api_key_env and os.environ.get(spec.api_key_env))
+        via_or = bool(spec.openrouter_id and os.environ.get(OPENROUTER_KEY_ENV))
+
+        if via_or and (self.prefer_openrouter or not native):
+            return "openrouter"
+        return "direct" if native else "simulated"
+
+    def is_live(self, key: str) -> bool:
+        return self.route(key) != "simulated"
+
+    def _as_openrouter(self, spec: ModelSpec) -> ModelSpec:
+        return replace(
+            spec,
+            provider="openai_compat",
+            model_id=spec.openrouter_id or spec.model_id,
+            base_url=OPENROUTER_BASE_URL,
+            api_key_env=OPENROUTER_KEY_ENV,
+            # OpenRouter normalises everything to the OpenAI schema, so JSON
+            # mode is available even for models whose native API lacks it.
+            supports_json_mode=True,
+        )
 
     def status(self) -> list[dict[str, Any]]:
         return [
@@ -116,7 +153,9 @@ class Registry:
                 "strengths": s.strengths,
                 "can_orchestrate": s.can_orchestrate,
                 "live": self.is_live(s.key),
+                "route": self.route(s.key),
                 "api_key_env": s.api_key_env,
+                "openrouter_id": s.openrouter_id,
             }
             for s in self.all()
         ]
@@ -141,8 +180,11 @@ class Registry:
             # Used by the preflight check to probe a provider with a tiny
             # max_tokens instead of a full protocol-sized request.
             spec = replace(spec, **overrides)
-        live = self.is_live(key)
-        provider = self._providers[spec.provider if live else "simulated"]
+
+        route = self.route(key)
+        if route == "openrouter":
+            spec = self._as_openrouter(spec)
+        provider = self._providers[spec.provider if route != "simulated" else "simulated"]
 
         # Phases run models with asyncio.gather, so one straggler holds up the
         # whole round. Each provider sets its own timeout, but SDKs have their

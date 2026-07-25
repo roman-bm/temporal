@@ -57,9 +57,10 @@ async function boot() {
   state.models = data.models;
 
   const badge = $("#live-badge");
+  const viaOr = data.models.filter((m) => m.route === "openrouter").length;
   badge.textContent = data.simulation_forced
     ? "simulation forced"
-    : `${data.live_count}/${data.models.length} models live`;
+    : `${data.live_count}/${data.models.length} live${viaOr ? ` · ${viaOr} via OpenRouter` : ""}`;
   badge.className = "badge " + (data.live_count > 0 && !data.simulation_forced ? "good" : "warn");
 
   renderChairs();
@@ -108,7 +109,7 @@ function renderPanel() {
         <span class="name"><i class="dot ${m.live ? "live" : "sim"}"></i>${esc(m.name)}</span>
         <span class="vendor">${esc(m.vendor)}</span>
       </div>
-      <div class="lens">${esc(m.lens)} · ${esc((m.strengths || []).slice(0, 2).join(", "))}</div>`;
+      <div class="lens">${esc(m.lens)}${m.route === "openrouter" ? " · via openrouter" : ""}</div>`;
     card.addEventListener("click", () => {
       if (m.key === state.chair) return;
       state.panel.has(m.key) ? state.panel.delete(m.key) : state.panel.add(m.key);

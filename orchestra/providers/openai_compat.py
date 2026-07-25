@@ -70,6 +70,11 @@ class OpenAICompatProvider:
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         }
+        if "openrouter.ai" in url:
+            # OpenRouter uses these for app attribution on its dashboards.
+            headers["HTTP-Referer"] = "https://github.com/roman-bm/temporal"
+            headers["X-Title"] = "Council"
+
 
         started = time.perf_counter()
         client = self._get_client()

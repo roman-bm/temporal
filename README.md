@@ -209,6 +209,37 @@ Fifteen models across twelve providers. Five can chair.
 | Sonar Pro | Perplexity | external-evidence | |
 | Nova Pro | Amazon | cost-and-operations | |
 
+### One key for the whole roster: OpenRouter
+
+Signing up to twelve providers to fill a panel is the main thing standing
+between you and a genuinely cross-vendor council. Every model above also
+declares an `openrouter_id`, so:
+
+```bash
+OPENROUTER_API_KEY=sk-or-...    # that's it — all 15 models go live
+```
+
+Routing is per model, and native keys win:
+
+| You have | What happens |
+|---|---|
+| Nothing | Everything simulated |
+| A vendor key only | That vendor direct, the rest simulated |
+| OpenRouter only | **All 15 live**, all through OpenRouter |
+| Both | Vendor keys go direct (no extra hop, usually cheaper); OpenRouter fills every remaining seat |
+
+Set `ORCHESTRA_PREFER_OPENROUTER=1` to route everything through OpenRouter even
+where a native key exists — useful for one-invoice billing. `orchestra models`
+and the UI both show which route each model is on, so a run is never ambiguous
+about where its calls went.
+
+Two things worth knowing. Via OpenRouter even Claude goes over the
+OpenAI-compatible HTTP path rather than the Anthropic SDK, so the adaptive
+thinking and refusal-fallback handling in the native provider don't apply —
+prefer a direct `ANTHROPIC_API_KEY` when you have one. And OpenRouter
+normalises everything to the OpenAI schema, which means JSON mode becomes
+available even for models whose own API lacks it.
+
 **Model IDs move fast.** Everything above lives in
 [`orchestra/models.yaml`](orchestra/models.yaml) — lens, weight, endpoint, chair
 eligibility, the lot. If a call 404s, edit the YAML, not the code. Adding a
@@ -292,7 +323,7 @@ record.
 
 ```bash
 pip install -e ".[dev]"
-pytest                        # 79 tests, no network, no keys required
+pytest                        # 99 tests, no network, no keys required
 ruff check orchestra tests    # same rules CI enforces
 ORCHESTRA_SIMULATE=1 orchestra-server
 ```
@@ -314,6 +345,8 @@ refusals and old-SDK fallback degradation.
 | `ORCHESTRA_SIMULATE` | unset | `1` forces the simulator for every model |
 | `ORCHESTRA_CONCURRENCY` | `8` | max parallel model calls |
 | `ORCHESTRA_MODELS` | bundled | path to an alternate `models.yaml` |
+| `OPENROUTER_API_KEY` | unset | fills every seat a native key doesn't |
+| `ORCHESTRA_PREFER_OPENROUTER` | unset | `1` routes via OpenRouter even when a native key exists |
 | `ORCHESTRA_TOKEN` | unset | shared token required on `/api/*`; set it whenever you bind past localhost |
 | `PORT` / `HOST` | `8000` / `127.0.0.1` | server bind — `HOST=0.0.0.0` to reach it from another device |
 

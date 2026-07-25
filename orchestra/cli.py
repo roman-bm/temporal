@@ -72,14 +72,19 @@ def cmd_models(args: argparse.Namespace) -> int:
     live = 0
     print(f"{BOLD}{'KEY':<20} {'MODEL':<18} {'VENDOR':<16} {'LENS':<26} {'W':<5} STATUS{RESET}")
     for m in registry.status():
-        state = f"{GREEN}live{RESET}" if m["live"] else f"{YELLOW}simulated{RESET} ({m['api_key_env']} unset)"
+        state = {
+            "direct": f"{GREEN}direct{RESET}",
+            "openrouter": f"{CYAN}openrouter{RESET}",
+        }.get(m["route"], f"{YELLOW}simulated{RESET} ({m['api_key_env']} unset)")
         live += 1 if m["live"] else 0
         chair = "*" if m["can_orchestrate"] else " "
         print(
             f"{chair}{m['key']:<19} {m['name']:<18} {m['vendor']:<16} "
             f"{m['lens']:<26} {m['weight']:<5} {state}"
         )
-    print(f"\n{DIM}* = can chair the council. {live}/{len(registry.all())} models live.{RESET}")
+    routed = sum(1 for m in registry.status() if m["route"] == "openrouter")
+    extra = f" ({routed} via OpenRouter)" if routed else ""
+    print(f"\n{DIM}* = can chair the council. {live}/{len(registry.all())} models live{extra}.{RESET}")
     return 0
 
 

@@ -17,6 +17,7 @@ class ModelSpec:
     model_id: str
     api_key_env: str | None = None
     base_url: str | None = None
+    openrouter_id: str | None = None
     weight: float = 1.0
     can_orchestrate: bool = False
     supports_json_mode: bool = False
