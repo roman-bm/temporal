@@ -1,0 +1,214 @@
+# Model registry for the orchestration council.
+#
+# Every field here is editable — provider model IDs move fast, so if a live call
+# 404s, change `model_id` below rather than touching the code.
+#
+# provider:
+#   anthropic     -> official Anthropic SDK
+#   openai_compat -> any OpenAI-compatible /chat/completions endpoint
+#
+# weight:          base voting weight in the consensus math (0.5 - 1.5)
+# can_orchestrate: may be selected as the main model
+# lens:            the default analytical bias this model is briefed to hold.
+#                  The orchestrator may override it per task.
+
+defaults:
+  temperature: 0.7
+  max_tokens: 4000
+  timeout_s: 180
+
+models:
+  - key: claude-opus-5
+    name: Claude Opus 5
+    vendor: Anthropic
+    provider: anthropic
+    model_id: claude-opus-5
+    api_key_env: ANTHROPIC_API_KEY
+    weight: 1.5
+    can_orchestrate: true
+    supports_json_mode: false
+    effort: high
+    lens: systems-architecture
+    strengths: [long-horizon reasoning, agentic planning, code, synthesis]
+
+  - key: claude-fable-5
+    name: Claude Fable 5
+    vendor: Anthropic
+    provider: anthropic
+    model_id: claude-fable-5
+    api_key_env: ANTHROPIC_API_KEY
+    weight: 1.5
+    can_orchestrate: true
+    supports_json_mode: false
+    effort: high
+    lens: first-principles
+    strengths: [hardest reasoning, long-horizon autonomy, ambiguity]
+
+  - key: claude-sonnet-5
+    name: Claude Sonnet 5
+    vendor: Anthropic
+    provider: anthropic
+    model_id: claude-sonnet-5
+    api_key_env: ANTHROPIC_API_KEY
+    weight: 1.2
+    can_orchestrate: true
+    supports_json_mode: false
+    effort: medium
+    lens: implementation-pragmatics
+    strengths: [fast iteration, coding, tool use]
+
+  - key: gpt-5
+    name: GPT-5
+    vendor: OpenAI
+    provider: openai_compat
+    model_id: gpt-5
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    weight: 1.4
+    can_orchestrate: true
+    supports_json_mode: true
+    lens: quantitative-rigor
+    strengths: [math, structured analysis, breadth]
+
+  - key: gemini-2.5-pro
+    name: Gemini 2.5 Pro
+    vendor: Google
+    provider: openai_compat
+    model_id: gemini-2.5-pro
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    api_key_env: GEMINI_API_KEY
+    weight: 1.3
+    can_orchestrate: true
+    supports_json_mode: true
+    lens: evidence-and-sources
+    strengths: [long context, multimodal, retrieval-style reasoning]
+
+  - key: grok-4
+    name: Grok 4
+    vendor: xAI
+    provider: openai_compat
+    model_id: grok-4
+    base_url: https://api.x.ai/v1
+    api_key_env: XAI_API_KEY
+    weight: 1.1
+    can_orchestrate: false
+    supports_json_mode: true
+    lens: contrarian-red-team
+    strengths: [adversarial critique, current events]
+
+  - key: deepseek-reasoner
+    name: DeepSeek R1
+    vendor: DeepSeek
+    provider: openai_compat
+    model_id: deepseek-reasoner
+    base_url: https://api.deepseek.com/v1
+    api_key_env: DEEPSEEK_API_KEY
+    weight: 1.2
+    can_orchestrate: false
+    supports_json_mode: false
+    lens: formal-verification
+    strengths: [chain-of-thought math, proofs, code correctness]
+
+  - key: mistral-large
+    name: Mistral Large
+    vendor: Mistral AI
+    provider: openai_compat
+    model_id: mistral-large-latest
+    base_url: https://api.mistral.ai/v1
+    api_key_env: MISTRAL_API_KEY
+    weight: 1.0
+    can_orchestrate: false
+    supports_json_mode: true
+    lens: regulatory-and-compliance
+    strengths: [European context, structured output, efficiency]
+
+  - key: llama-4-maverick
+    name: Llama 4 Maverick
+    vendor: Meta (via Together)
+    provider: openai_compat
+    model_id: meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8
+    base_url: https://api.together.xyz/v1
+    api_key_env: TOGETHER_API_KEY
+    weight: 1.0
+    can_orchestrate: false
+    supports_json_mode: true
+    lens: open-source-ecosystem
+    strengths: [cost efficiency, breadth, reproducibility]
+
+  - key: qwen-max
+    name: Qwen Max
+    vendor: Alibaba
+    provider: openai_compat
+    model_id: qwen-max
+    base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+    api_key_env: DASHSCOPE_API_KEY
+    weight: 1.0
+    can_orchestrate: false
+    supports_json_mode: true
+    lens: apac-market-reality
+    strengths: [multilingual, manufacturing/ops domains]
+
+  - key: kimi-k2
+    name: Kimi K2
+    vendor: Moonshot AI
+    provider: openai_compat
+    model_id: kimi-latest
+    base_url: https://api.moonshot.ai/v1
+    api_key_env: MOONSHOT_API_KEY
+    weight: 0.9
+    can_orchestrate: false
+    supports_json_mode: true
+    lens: long-document-synthesis
+    strengths: [very long context, agentic tool use]
+
+  - key: command-a
+    name: Command A
+    vendor: Cohere
+    provider: openai_compat
+    model_id: command-a-03-2025
+    base_url: https://api.cohere.ai/compatibility/v1
+    api_key_env: COHERE_API_KEY
+    weight: 0.9
+    can_orchestrate: false
+    supports_json_mode: true
+    lens: enterprise-operations
+    strengths: [RAG, enterprise workflows, citation discipline]
+
+  - key: glm-4.6
+    name: GLM-4.6
+    vendor: Z.ai
+    provider: openai_compat
+    model_id: glm-4.6
+    base_url: https://api.z.ai/api/paas/v4
+    api_key_env: ZAI_API_KEY
+    weight: 0.9
+    can_orchestrate: false
+    supports_json_mode: true
+    lens: cost-benefit-engineering
+    strengths: [coding, agentic loops, price/performance]
+
+  - key: sonar-pro
+    name: Sonar Pro
+    vendor: Perplexity
+    provider: openai_compat
+    model_id: sonar-pro
+    base_url: https://api.perplexity.ai
+    api_key_env: PERPLEXITY_API_KEY
+    weight: 1.0
+    can_orchestrate: false
+    supports_json_mode: false
+    lens: external-evidence
+    strengths: [live web grounding, citations, fact checking]
+
+  - key: nova-pro
+    name: Nova Pro
+    vendor: Amazon
+    provider: openai_compat
+    model_id: amazon.nova-pro-v1:0
+    base_url: https://openai.bedrock.us-east-1.amazonaws.com/v1
+    api_key_env: AWS_BEARER_TOKEN_BEDROCK
+    weight: 0.9
+    can_orchestrate: false
+    supports_json_mode: false
+    lens: cost-and-operations
+    strengths: [enterprise integration, throughput, price]

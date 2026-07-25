@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Council — multi-model orchestration</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%237dd3a0'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%230d1014'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark"></span>
+    <div>
+      <h1>Council</h1>
+      <p class="sub">One chair model. A panel of rivals. A negotiated answer.</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span id="live-badge" class="badge">loading…</span>
+    <button id="theme-toggle" class="ghost" type="button" title="Toggle theme">◐</button>
+  </div>
+</header>
+
+<main>
+  <!-- ─────────────────────────── setup ─────────────────────────── -->
+  <section class="panel setup" id="setup">
+    <h2>1. The task</h2>
+    <textarea id="task" rows="5" placeholder="What should the council decide? Be specific — a real decision with constraints produces far better negotiation than an open prompt."></textarea>
+    <details>
+      <summary>Additional context (optional)</summary>
+      <textarea id="context" rows="4" placeholder="Numbers, constraints, prior decisions, excerpts…"></textarea>
+    </details>
+
+    <h2>2. The chair</h2>
+    <p class="hint">The main model. It frames the problem, assigns briefs, steers deadlocks, and writes the final synthesis.</p>
+    <div id="orchestrators" class="chair-grid"></div>
+
+    <h2>3. The panel</h2>
+    <p class="hint">Each panelist argues from a different lens. Diversity of provider matters more than count.</p>
+    <div class="panel-actions">
+      <button class="ghost" type="button" data-select="all">All</button>
+      <button class="ghost" type="button" data-select="live">Live only</button>
+      <button class="ghost" type="button" data-select="none">None</button>
+      <span id="panel-count" class="hint"></span>
+    </div>
+    <div id="panel" class="panel-grid"></div>
+
+    <h2>4. Protocol</h2>
+    <div class="controls">
+      <label>
+        Negotiation rounds
+        <input type="range" id="rounds" min="0" max="5" value="2" />
+        <output id="rounds-out">2</output>
+      </label>
+      <label>
+        Stop at convergence
+        <input type="range" id="target" min="50" max="100" value="78" />
+        <output id="target-out">0.78</output>
+      </label>
+    </div>
+
+    <button id="run" class="primary" type="button">Convene the council</button>
+    <p id="setup-error" class="error" hidden></p>
+  </section>
+
+  <!-- ─────────────────────────── run ─────────────────────────── -->
+  <section class="panel run" id="run-view" hidden>
+    <div class="run-header">
+      <ol class="stepper" id="stepper">
+        <li data-phase="framing">Framing</li>
+        <li data-phase="proposal">Proposals</li>
+        <li data-phase="cross_examination">Cross-exam</li>
+        <li data-phase="negotiation">Negotiation</li>
+        <li data-phase="synthesis">Synthesis</li>
+      </ol>
+      <button id="reset" class="ghost" type="button" hidden>New run</button>
+    </div>
+
+    <div id="sim-warning" class="warning" hidden>
+      Some models had no API key and were replaced by the deterministic
+      <strong>simulator</strong>. Simulated content demonstrates the protocol — it is not analysis.
+    </div>
+
+    <div class="metrics">
+      <div class="metric"><span id="m-convergence">—</span><label>convergence</label></div>
+      <div class="metric"><span id="m-accepted">—</span><label>accepted</label></div>
+      <div class="metric"><span id="m-contested">—</span><label>contested</label></div>
+      <div class="metric"><span id="m-rejected">—</span><label>rejected</label></div>
+      <div class="metric"><span id="m-calls">—</span><label>model calls</label></div>
+    </div>
+
+    <div class="split">
+      <div class="col">
+        <h3>Panel activity</h3>
+        <div id="activity" class="activity"></div>
+
+        <h3>Convergence</h3>
+        <svg id="spark" class="spark" viewBox="0 0 320 90" preserveAspectRatio="none"></svg>
+
+        <h3>Chair</h3>
+        <div id="chair-log" class="chair-log"><p class="hint">Waiting for the chair…</p></div>
+      </div>
+
+      <div class="col wide">
+        <h3>Claim ledger <span class="hint" id="ledger-hint"></span></h3>
+        <div id="ledger" class="ledger"><p class="hint">Claims appear once the panel reports.</p></div>
+      </div>
+    </div>
+
+    <div id="report" class="report" hidden></div>
+    <details id="raw-events" hidden>
+      <summary>Event log</summary>
+      <pre id="raw-log"></pre>
+    </details>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
