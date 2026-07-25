@@ -291,3 +291,58 @@ async def test_a_provider_that_raises_is_contained(monkeypatch):
     result = await reg.call("gpt-5", "s", "u")
     assert result.ok is False
     assert "provider bug" in result.error
+
+
+# ── empty-response diagnostics ───────────────────────────────────────
+
+class _Block:
+    def __init__(self, type_, text=""):
+        self.type = type_
+        self.text = text
+
+
+class _EmptyResponse:
+    """A 200 with no usable text — the shape that used to report as blank."""
+
+    def __init__(self, blocks, stop_reason="end_turn", output_tokens=0):
+        self.content = blocks
+        self.stop_reason = stop_reason
+        self.stop_details = None
+        self.usage = type("U", (), {"input_tokens": 5, "output_tokens": output_tokens})()
+
+
+async def test_empty_response_explains_itself():
+    """`ok=False` with a blank error is indistinguishable from a dead socket.
+
+    This actually happened on the first live call: the provider returned no
+    text, no exception, and the preflight could only print 'unknown error'.
+    """
+    provider = AnthropicProvider()
+    _wire(provider, _FakeMessages(_EmptyResponse(
+        [_Block("thinking")], stop_reason="end_turn", output_tokens=40,
+    )))
+
+    result = await provider.complete(spec(provider="anthropic", model_id="claude-opus-5"), "s", "u")
+    assert result.ok is False
+    assert result.error  # the whole point: never blank
+    assert "stop_reason=end_turn" in result.error
+    assert "thinking" in result.error
+    assert "output_tokens=40" in result.error
+
+
+async def test_a_budget_exhausted_response_says_so():
+    provider = AnthropicProvider()
+    _wire(provider, _FakeMessages(_EmptyResponse(
+        [_Block("thinking")], stop_reason="max_tokens", output_tokens=64,
+    )))
+
+    result = await provider.complete(spec(provider="anthropic", model_id="claude-opus-5"), "s", "u")
+    assert "raise max_tokens" in result.error
+
+
+async def test_a_normal_response_carries_no_error():
+    provider = AnthropicProvider()
+    _wire(provider, _FakeMessages(_FakeResponse(text='{"ok": true}')))
+    result = await provider.complete(spec(provider="anthropic", model_id="claude-opus-5"), "s", "u")
+    assert result.ok
+    assert result.error is None

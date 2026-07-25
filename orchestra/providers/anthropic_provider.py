@@ -121,12 +121,29 @@ class AnthropicProvider:
             block.text for block in response.content if getattr(block, "type", "") == "text"
         )
         usage = getattr(response, "usage", None)
+
+        # An empty text body with no exception is otherwise indistinguishable
+        # from a transport failure — the caller sees ok=False and a blank error.
+        # Say what actually came back: `max_tokens` means the budget went to
+        # thinking, and thinking-only content means no answer was produced.
+        error = None
+        if not text.strip():
+            stop = getattr(response, "stop_reason", None) or "unknown"
+            blocks = sorted({getattr(b, "type", "?") for b in response.content}) or ["none"]
+            error = (
+                f"no text in response (stop_reason={stop}, blocks={'+'.join(blocks)}, "
+                f"output_tokens={getattr(usage, 'output_tokens', 0)})"
+            )
+            if stop == "max_tokens":
+                error += " — raise max_tokens; thinking consumed the budget"
+
         return LLMResult(
             text=text,
             model_key=spec.key,
             input_tokens=getattr(usage, "input_tokens", 0) or 0,
             output_tokens=getattr(usage, "output_tokens", 0) or 0,
             latency_s=time.perf_counter() - started,
+            error=error,
         )
 
     async def aclose(self) -> None:
