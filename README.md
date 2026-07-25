@@ -132,8 +132,39 @@ Exit code is non-zero if anything is broken, so it drops straight into CI.
 ### Running it from your phone
 
 The UI is responsive and the whole flow — including the live SSE stream — works
-at phone width. There's no app to install; you point the phone's browser at a
-machine running the server.
+at phone width. There's no app to install.
+
+**If the phone is your only device**, the options below that start "your laptop"
+don't help. Two routes need no computer at all:
+
+#### A. GitHub Actions — no server, no hosting, no exposed endpoint
+
+The best phone-only route. Put your keys in **Settings → Secrets → Actions**
+(`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`), then from the GitHub mobile app or
+the site: **Actions → Run a council → Run workflow**, type the task, pick a
+chair, run it.
+
+The report is written into the **job summary**, which GitHub renders as
+formatted markdown right in the mobile UI — you read the answer without
+downloading anything. The full markdown and JSON are attached as artifacts too.
+
+Keys live in GitHub Secrets, never in a URL, and nothing is exposed to the
+internet. Workflow inputs are passed through the environment rather than
+interpolated into the shell, so a task containing backticks can't execute as
+code.
+
+#### B. Deploy the web UI to a URL
+
+Want the live streaming interface instead? `render.yaml` + `Dockerfile` make it
+a blueprint deploy: **render.com → New → Blueprint → pick this repo**. Render's
+dashboard is fully web-based, so this works from a phone. It prompts for the two
+keys and **generates `ORCHESTRA_TOKEN` for you** — the service is on the public
+internet and `POST /api/sessions` spends real money, so the token is not
+optional. Any Docker-capable host (Railway, Fly, Cloud Run) works the same way.
+
+Two caveats on free tiers: instances sleep when idle, and **sessions are held in
+memory**, so a sleep or restart drops an in-flight run. Download the markdown
+while the report is on screen.
 
 **⚠ Read this first.** Binding past localhost so a phone can reach the UI also
 exposes it to everyone else on that network, and `POST /api/sessions` spends
@@ -154,7 +185,7 @@ instead.
 
 | Where the server runs | How the phone reaches it | Good for |
 |---|---|---|
-| **Your laptop, same Wi-Fi** | `http://<laptop-ip>:8000/?t=<token>` — find the IP with `ipconfig getifaddr en0` (macOS) or `hostname -I` (Linux) | The common case. Nothing leaves your network. |
+| **Your laptop, same Wi-Fi** (needs a computer) | `http://<laptop-ip>:8000/?t=<token>` — find the IP with `ipconfig getifaddr en0` (macOS) or `hostname -I` (Linux) | The common case. Nothing leaves your network. |
 | **A tunnel** (`cloudflared tunnel --url http://localhost:8000`, `ngrok http 8000`) | The public HTTPS URL the tunnel prints, plus `?t=<token>` | Reaching it off your home network. The token is doing real work here — treat the URL as a credential. |
 | **A small VPS / Fly / Railway** | Its hostname, plus `?t=<token>` | Always-on. Put the provider keys in the host's secret store, not a committed `.env`. |
 

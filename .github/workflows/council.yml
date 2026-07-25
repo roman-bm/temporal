@@ -1,0 +1,119 @@
+# Run a council from the GitHub mobile app — no server, no hosting, no laptop.
+#
+# Actions → Run a council → Run workflow → type the task. The report is written
+# straight into the job summary, which renders as formatted markdown in the
+# GitHub mobile UI, so you read the answer without downloading anything. The
+# full markdown and JSON are also attached as artifacts.
+#
+# Keys live in repository secrets, never in a URL, and no endpoint is exposed.
+name: Run a council
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "The decision to put to the council"
+        required: true
+        type: string
+      context:
+        description: "Extra context (numbers, constraints) — optional"
+        required: false
+        type: string
+        default: ""
+      chair:
+        description: "Which model chairs it"
+        required: true
+        default: claude-opus-5
+        type: choice
+        options: [claude-opus-5, claude-fable-5, claude-sonnet-5, gpt-5, gemini-2.5-pro]
+      panel:
+        description: "Panelists (comma-separated keys, blank = auto)"
+        required: false
+        type: string
+        default: ""
+      panel_size:
+        description: "Max panelists when auto-selecting"
+        required: false
+        default: "5"
+        type: string
+      rounds:
+        description: "Negotiation rounds"
+        required: true
+        default: "2"
+        type: choice
+        options: ["0", "1", "2", "3"]
+
+jobs:
+  council:
+    runs-on: ubuntu-latest
+    # A council is minutes of model latency, not seconds; the default 360-minute
+    # limit is plenty but an explicit cap stops a wedged provider burning hours.
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Preflight
+        # Cheap, and it turns "the run failed 40 calls in" into "this model id
+        # is wrong". Never fails the job: a partial panel is still a council.
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          orchestra doctor || true
+
+      - name: Convene
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Inputs go through the environment, never interpolated into the
+          # shell. `${{ }}` is substituted as literal text before bash sees the
+          # line, so a task containing backticks or $( ) would otherwise execute
+          # as code — GitHub's documented script-injection hole.
+          TASK: ${{ inputs.task }}
+          CONTEXT: ${{ inputs.context }}
+          CHAIR: ${{ inputs.chair }}
+          PANEL: ${{ inputs.panel }}
+          PANEL_SIZE: ${{ inputs.panel_size }}
+          ROUNDS: ${{ inputs.rounds }}
+        run: |
+          orchestra run "$TASK" \
+            --context "$CONTEXT" \
+            --orchestrator "$CHAIR" \
+            --panel "$PANEL" \
+            --panel-size "$PANEL_SIZE" \
+            --rounds "$ROUNDS" \
+            --out report.md \
+            --json-out report.json
+
+      - name: Publish the report to the job summary
+        # This is the mobile payoff: GITHUB_STEP_SUMMARY renders markdown in the
+        # GitHub app, so the answer is readable on the phone with no download.
+        if: always()
+        run: |
+          if [ -s report.md ]; then
+            cat report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### The council produced no report" >> "$GITHUB_STEP_SUMMARY"
+            echo "Check the *Convene* step's log for what failed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: council-report
+          path: |
+            report.md
+            report.json
+          retention-days: 30
+          if-no-files-found: warn

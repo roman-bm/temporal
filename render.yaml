@@ -1,0 +1,26 @@
+# Render blueprint — deploy the web UI from a phone browser.
+#
+# render.com → New → Blueprint → pick this repo. Render reads this file, builds
+# the Dockerfile, and prompts for the two secrets. Its dashboard is fully
+# web-based, so the whole flow works on a phone with no laptop involved.
+#
+# ORCHESTRA_TOKEN is generated for you: the service is on the public internet,
+# and POST /api/sessions spends real money against the keys below. Without a
+# token anyone who finds the URL can run up your bill.
+services:
+  - type: web
+    name: council
+    runtime: docker
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: ORCHESTRA_TOKEN
+        generateValue: true          # Render mints a random secret
+      - key: ANTHROPIC_API_KEY
+        sync: false                  # prompted for, never stored in git
+      - key: OPENROUTER_API_KEY
+        sync: false
+      # A council is minutes of model latency; keep concurrency modest so a
+      # free instance isn't juggling fifteen sockets on shared CPU.
+      - key: ORCHESTRA_CONCURRENCY
+        value: "4"
